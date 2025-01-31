@@ -1137,7 +1137,7 @@ int mem_to_ondisk(void *outbuf, struct field *f, struct mem_info *info,
             // if string is longer than field
             // and find-by-truncate is enabled
             convopts->step = (f->flags & INDEX_DESCEND) ? 0 : 1;
-            bias_info->truncated = 1;
+            if (bias_info) bias_info->truncated = 1;
         }
         rc = CLIENT_to_SERVER(m->z, m->n, CLIENT_PSTR2, null,
                               (struct field_conv_opts *)convopts,
@@ -1371,7 +1371,7 @@ int mem_to_ondisk(void *outbuf, struct field *f, struct mem_info *info,
             /* if the SQLite BLOB is longer than the bytearray field
                and find-by-truncate is enabled. */
             convopts->step = (f->flags & INDEX_DESCEND) ? 0 : 1;
-            bias_info->truncated = 1;
+            if (bias_info) bias_info->truncated = 1;
         }
 
         rc =
@@ -12834,9 +12834,12 @@ done:
 
 static inline void build_indexes_expressions_query(strbuf *sql,
                                                    struct schema *sc,
-                                                   char *tblname, char *expr)
+                                                   char *tblname, struct field *fld)
 {
     int i;
+    int max_expr_size = 256;
+    char expr[max_expr_size];
+
     strbuf_clear(sql);
     strbuf_appendf(sql, "WITH \"%s\"(\"%s\"", tblname, sc->member[0].name);
     for (i = 1; i < sc->nmembers; i++) {
@@ -12845,6 +12848,13 @@ static inline void build_indexes_expressions_query(strbuf *sql,
     strbuf_appendf(sql, ") AS (SELECT @%s", sc->member[0].name);
     for (i = 1; i < sc->nmembers; i++) {
         strbuf_appendf(sql, ", @%s", sc->member[i].name);
+    }
+    switch(fld->type) {
+        case SERVER_BCSTR:
+            snprintf(expr, max_expr_size, "substr(%s,1,%u)", fld->name, fld->len - 1);
+            break;
+        default:
+            snprintf(expr, max_expr_size, "%s", fld->name);
     }
     strbuf_appendf(sql, ") SELECT (%s) FROM \"%s\"", expr, tblname);
 }
@@ -12913,10 +12923,9 @@ int indexes_expressions_data(const struct dbtable *tbl, struct schema *sc,
         }
     }
 
-    build_indexes_expressions_query(sql, sc, "expridx_temp", f->name);
+    build_indexes_expressions_query(sql, sc, "expridx_temp", f);
 
-    rc =
-        run_verify_indexes_query((char *)strbuf_buf(sql), sc, m, &mout, &exist);
+    rc = run_verify_indexes_query((char *)strbuf_buf(sql), sc, m, &mout, &exist);
     if (rc || !exist) {
         logmsg(LOGMSG_ERROR, "%s: failed to run internal query, rc %d\n",
                __func__, rc);
