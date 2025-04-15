@@ -3311,7 +3311,7 @@ static int cdb2_send_query(cdb2_hndl_tp *hndl, cdb2_hndl_tp *event_hndl,
 
     int len = cdb2__query__get_packed_size(&query);
 
-    unsigned char *buf;
+    unsigned char *buf = NULL;
     int on_heap = 1;
     if (trans_append || len > MAX_BUFSIZE_ONSTACK) {
         buf = malloc(len + 1);
@@ -3338,7 +3338,7 @@ static int cdb2_send_query(cdb2_hndl_tp *hndl, cdb2_hndl_tp *event_hndl,
     rc = sbuf2flush(sb);
     if (rc < 0) {
         debugprint("sbuf2flush rc = %d\n", rc);
-        if (on_heap)
+        if (on_heap && buf)
             free(buf);
         rc = -1;
         goto after_callback;
@@ -3360,7 +3360,7 @@ static int cdb2_send_query(cdb2_hndl_tp *hndl, cdb2_hndl_tp *event_hndl,
                 last = last->next;
             last->next = item;
         }
-    } else if (on_heap) {
+    } else if (on_heap && buf) {
         free(buf);
     }
 
